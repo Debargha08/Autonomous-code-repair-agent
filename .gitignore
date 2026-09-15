@@ -1,0 +1,11 @@
+.env
+__pycache__/
+*.pyc
+.pytest_cache/
+.venv/
+venv/
+*.log
+*.bak
+*.before_*
+sandbox/*/.pytest_cache/
+*_failure.txt
