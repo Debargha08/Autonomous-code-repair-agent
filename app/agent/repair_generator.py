@@ -251,6 +251,25 @@ Actual result:
 
     reflection_section = ""
 
+    repair_type_instruction = ""
+
+    if forced_repair_type:
+        repair_type_instruction = f"""
+================ REQUIRED REPAIR TYPE ================
+
+The previous repair attempt was rejected because the
+required change cannot safely be represented as a
+single statement replacement.
+
+You MUST use:
+
+repair_type: {forced_repair_type}
+
+Do NOT use replace_statement.
+
+Return a complete corrected function.
+"""
+
     if reflection:
         reflection_section = f"""
 ================ REFLECTOR ANALYSIS ================
@@ -302,6 +321,8 @@ refer to one of these exact structural paths.
 {behavior_specification}
 
 {reflection_section}
+
+{repair_type_instruction}
 
 ================ REPAIR OBJECTIVE ================
 
@@ -619,6 +640,7 @@ Return ONLY the JSON object.
             "Using Reflector feedback: NO"
         )
 
+
     response = llm.invoke(prompt)
 
     raw_output = response.content.strip()
@@ -688,6 +710,86 @@ Return ONLY the JSON object.
                 "but did not provide a complete corrected "
                 "function."
             )
+
+    # Deterministically resolve an LLM-selected control-flow
+    # container to the most specific nested executable statement.
+    #
+    # Example:
+    #   [1]              -> If
+    #   [1, "body", 1]   -> Return
+    #
+    # replace_statement must target the Return, not the If.
+
+    if proposal.get("repair_type") == "replace_statement":
+
+        proposed_path = tuple(proposal.get("path", []))
+
+        matching_statement = next(
+            (
+                statement
+                for statement in statements
+                if tuple(statement.get("path", ())) == proposed_path
+            ),
+            None,
+        )
+
+        control_flow_types = {
+            "If",
+            "For",
+            "AsyncFor",
+            "While",
+            "Try",
+            "With",
+            "AsyncWith",
+        }
+
+        if (
+            matching_statement
+            and matching_statement.get("type") in control_flow_types
+        ):
+
+            nested_statements = [
+                statement
+                for statement in statements
+                if (
+                    tuple(statement.get("path", ()))[:len(proposed_path)]
+                    == proposed_path
+                    and len(tuple(statement.get("path", ())))
+                    > len(proposed_path)
+                    and statement.get("type") not in control_flow_types
+                )
+            ]
+
+            if nested_statements:
+
+                nested_statements.sort(
+                    key=lambda statement: (
+                        len(tuple(statement.get("path", ()))),
+                        statement.get("index", 0),
+                    )
+                )
+
+                selected_statement = nested_statements[0]
+
+                print(
+                    "\n⚠ LLM selected control-flow container:"
+                )
+                print(
+                    f"  {proposed_path}"
+                    f" ({matching_statement.get('type')})"
+                )
+
+                print(
+                    "✓ Resolving to nested executable statement:"
+                )
+                print(
+                    f"  {tuple(selected_statement['path'])}"
+                    f" ({selected_statement.get('type')})"
+                )
+
+                proposal["path"] = list(
+                    selected_statement["path"]
+                )
 
     validate_statement_target(
         proposal,

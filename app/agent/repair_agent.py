@@ -16,6 +16,11 @@ from app.agent.regression_test_runner import (
 )
 from app.agent.repair_decision import decide_repair
 from app.agent.reflector import reflect_on_failure
+from app.tools.git_tools import (
+    is_git_repository,
+    create_repair_checkpoint,
+    rollback_to_checkpoint,
+)
 
 
 MAX_RETRIES = 2
@@ -253,6 +258,69 @@ def run_repair_pipeline(
             "function"
         ]
 
+        # --------------------------------------------------
+        # Create a Git checkpoint before modifying the
+        # target source file.
+        #
+        # The checkpoint is path-scoped. It never resets
+        # or commits the entire parent repository.
+        # --------------------------------------------------
+
+        repair_checkpoint = None
+
+        if is_git_repository(repository_path):
+
+            try:
+
+                repair_checkpoint = create_repair_checkpoint(
+                    repository_path,
+                    target_files=[source_file],
+                    message=(
+                        f"repair checkpoint: "
+                        f"{source_file}"
+                    )
+                )
+
+                print(
+                    "\n✓ Git repair checkpoint created."
+                )
+
+                print(
+                    f"  Commit: "
+                    f"{repair_checkpoint['commit']}"
+                )
+
+                print(
+                    f"  Target: "
+                    f"{source_file}"
+                )
+
+            except Exception as checkpoint_error:
+
+                print(
+                    "\n✗ Git checkpoint creation failed:"
+                )
+
+                print(
+                    checkpoint_error
+                )
+
+                print(
+                    "✗ Repair skipped for safety."
+                )
+
+                continue
+
+        else:
+
+            print(
+                "\n⚠ Target is not inside a Git repository."
+            )
+
+            print(
+                "⚠ Continuing with file backup safety only."
+            )
+
         print(
             "\n--------------------------------------------------"
         )
@@ -297,7 +365,8 @@ def run_repair_pipeline(
                 {
                     "context": context,
                     "proposal": proposal,
-                    "result": result
+                    "result": result,
+                    "checkpoint": repair_checkpoint
                 }
             )
 
@@ -475,7 +544,8 @@ def run_repair_pipeline(
                         {
                             "context": context,
                             "proposal": retry_proposal,
-                            "result": retry_result
+                            "result": retry_result,
+                            "checkpoint": repair_checkpoint
                         }
                     )
 
@@ -803,7 +873,10 @@ def run_repair_pipeline(
                 current_repair = {
                     "context": context,
                     "proposal": proposal,
-                    "result": retry_result
+                    "result": retry_result,
+                    "checkpoint": current_repair.get(
+                        "checkpoint"
+                    )
                 }
 
                 print(
@@ -1056,44 +1129,73 @@ def run_repair_pipeline(
             )
 
     # --------------------------------------------------
-    # Roll back rejected repairs.
+    # Roll back rejected repairs using the Git checkpoint.
     # --------------------------------------------------
 
-    for source_file in rolled_back_repairs:
+    for repair in processed_repairs:
 
-        full_path = os.path.join(
-            repository_path,
-            source_file
-        )
+        context = repair[
+            "context"
+        ]
 
-        backup_file = (
-            full_path + ".bak"
+        source_file = context[
+            "source_file"
+        ]
+
+        if source_file not in rolled_back_repairs:
+            continue
+
+        checkpoint = repair.get(
+            "checkpoint"
         )
 
         try:
 
-            if os.path.exists(
-                backup_file
-            ):
+            if checkpoint:
 
-                shutil.copy2(
-                    backup_file,
-                    full_path
-                )
-
-                os.remove(
-                    backup_file
+                rollback_to_checkpoint(
+                    repository_path,
+                    checkpoint
                 )
 
                 print(
-                    f"✓ Rolled back: "
+                    f"✓ Git rollback completed: "
                     f"{source_file}"
                 )
 
-        except OSError as error:
+                # Remove the legacy file backup after the
+                # Git checkpoint has successfully restored
+                # the target file.
+                backup_file = os.path.join(
+                    repository_path,
+                    source_file + ".bak"
+                )
+
+                if os.path.exists(
+                    backup_file
+                ):
+
+                    os.remove(
+                        backup_file
+                    )
+
+                    print(
+                        f"✓ Removed backup: "
+                        f"{source_file}.bak"
+                    )
+
+            else:
+
+                print(
+                    f"⚠ No Git checkpoint available "
+                    f"for {source_file}; "
+                    f"repair was not automatically rolled back."
+                )
+
+        except Exception as error:
 
             print(
-                f"✗ Rollback failed for "
+                f"✗ Git rollback failed for "
                 f"{source_file}: {error}"
             )
 
