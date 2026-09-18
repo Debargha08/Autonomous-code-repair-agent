@@ -3,4 +3,4 @@ def clamp(value, minimum, maximum):
         return minimum
     elif value > maximum:
         return maximum
-    return value
+    return minimum

@@ -1,4 +1,4 @@
 def calculate_total(price, quantity):
     if quantity > 0:
-        return price * quantity
+        return price + quantity
     return 0
