@@ -163,9 +163,15 @@ def generate_repair(
     source_file = repair_context["source_file"]
     function_name = repair_context["function"]
 
+    # Any retry uses complete-function replacement.
+    #
+    # Statement-level repair is preferred for the initial attempt,
+    # but after a failed attempt the LLM may repeatedly invent
+    # invalid AST paths. A complete function replacement gives the
+    # retry a stable structural target.
     forced_repair_type = (
         "replace_function"
-        if reflection_requires_function_replacement(reflection)
+        if reflection
         else None
     )
 
@@ -627,8 +633,8 @@ Return ONLY the JSON object.
     )
 
     print(
-        f"Executable repair type: "
-        ", ".join(sorted(EXECUTABLE_REPAIR_TYPES))
+        "Executable repair types: "
+        + ", ".join(sorted(EXECUTABLE_REPAIR_TYPES))
     )
 
     if reflection:

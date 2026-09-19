@@ -9,3 +9,5 @@ venv/
 *.before_*
 sandbox/*/.pytest_cache/
 *_failure.txt
+app/evaluation/report.md
+app/evaluation/results.json
