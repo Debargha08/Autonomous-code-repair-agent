@@ -1237,6 +1237,7 @@ def run_repair_pipeline(
         "expected_behaviors": expected_behaviors,
         "repair_contexts": repair_contexts,
         "applied_repairs": applied_repairs,
+        "processed_repairs": processed_repairs,
         "decisions": final_decisions,
         "regression_result": regression_result
     }

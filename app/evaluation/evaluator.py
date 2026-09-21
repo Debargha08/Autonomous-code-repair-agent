@@ -32,6 +32,10 @@ class BenchmarkResult:
     applied_repairs: int
     decisions: int
 
+    repair_attempts: int
+    first_attempt_successes: int
+    retry_assisted_successes: int
+
     repair_accepted: bool
     regression_free: bool
 
@@ -233,7 +237,7 @@ def parse_count(output: str, label: str) -> int:
 
 def parse_pipeline_counts(
     output: str,
-) -> tuple[str, int, int, int, int, int, int]:
+) -> tuple[str, int, int, int, int, int, int, int, int, int]:
     status = parse_final_status(output)
 
     detected = parse_count(output, "Detected Failures:")
@@ -243,6 +247,21 @@ def parse_pipeline_counts(
     applied = parse_count(output, "Applied Repairs:")
     decisions = parse_count(output, "Decisions:")
 
+    repair_attempts = parse_count(
+        output,
+        "Repair Attempts:"
+    )
+
+    first_attempt_successes = parse_count(
+        output,
+        "First-Attempt Successes:"
+    )
+
+    retry_assisted_successes = parse_count(
+        output,
+        "Retry-Assisted Successes:"
+    )
+
     return (
         status,
         detected,
@@ -251,6 +270,9 @@ def parse_pipeline_counts(
         contexts,
         applied,
         decisions,
+        repair_attempts,
+        first_attempt_successes,
+        retry_assisted_successes,
     )
 
 
@@ -277,9 +299,7 @@ def restore_benchmark(benchmark: Path) -> None:
         print(output)
 
 
-def evaluate_benchmark(
-    benchmark: Path,
-) -> BenchmarkResult:
+def evaluate_benchmark(benchmark: Path) -> BenchmarkResult:
     test_file = find_test_file(benchmark)
 
     print("\n" + "=" * 70)
@@ -287,16 +307,12 @@ def evaluate_benchmark(
     print("=" * 70)
 
     baseline_passed, baseline_failures, baseline_output, baseline_time = (
-        run_baseline(
-            benchmark,
-            test_file,
-        )
+        run_baseline(benchmark, test_file)
     )
 
     print(
         "[1B] Baseline:",
-        "PASS" if baseline_passed
-        else f"FAIL ({baseline_failures} failure(s))",
+        "PASS" if baseline_passed else f"FAIL ({baseline_failures} failure(s))",
     )
 
     if baseline_passed:
@@ -313,6 +329,9 @@ def evaluate_benchmark(
             repair_contexts=0,
             applied_repairs=0,
             decisions=0,
+            repair_attempts=0,
+            first_attempt_successes=0,
+            retry_assisted_successes=0,
             repair_accepted=False,
             regression_free=False,
             elapsed_seconds=baseline_time,
@@ -334,6 +353,9 @@ def evaluate_benchmark(
         contexts,
         applied,
         decisions,
+        repair_attempts,
+        first_attempt_successes,
+        retry_assisted_successes,
     ) = parse_pipeline_counts(agent_output)
 
     repair_accepted = status == "repair_accepted"
@@ -343,8 +365,10 @@ def evaluate_benchmark(
         and (
             "NO NEW REGRESSIONS" in agent_output
             or "Regression tests passed" in agent_output
-            or "regression" in agent_output.lower()
-            and "passed" in agent_output.lower()
+            or (
+                "regression" in agent_output.lower()
+                and "passed" in agent_output.lower()
+            )
         )
     )
 
@@ -355,6 +379,9 @@ def evaluate_benchmark(
     print("[1D] Repair contexts:", contexts)
     print("[1D] Applied repairs:", applied)
     print("[1D] Decisions:", decisions)
+    print("[1D] Repair attempts:", repair_attempts)
+    print("[1D] First-attempt successes:", first_attempt_successes)
+    print("[1D] Retry-assisted successes:", retry_assisted_successes)
     print(
         "[1D] Repair accepted:",
         "YES" if repair_accepted else "NO",
@@ -379,6 +406,9 @@ def evaluate_benchmark(
         repair_contexts=contexts,
         applied_repairs=applied,
         decisions=decisions,
+        repair_attempts=repair_attempts,
+        first_attempt_successes=first_attempt_successes,
+        retry_assisted_successes=retry_assisted_successes,
         repair_accepted=repair_accepted,
         regression_free=regression_free,
         elapsed_seconds=baseline_time + agent_time,
@@ -410,35 +440,96 @@ def calculate_metrics(
         for result in results
     )
 
+    total_repair_attempts = sum(
+        result.repair_attempts
+        for result in results
+    )
+
+    first_attempt_successes = sum(
+        result.first_attempt_successes
+        for result in results
+    )
+
+    retry_assisted_successes = sum(
+        result.retry_assisted_successes
+        for result in results
+    )
+
+    average_repair_attempts = (
+        total_repair_attempts / reproducible
+        if reproducible
+        else 0.0
+    )
+
+    maximum_repair_attempts = max(
+        (
+            result.repair_attempts
+            for result in results
+        ),
+        default=0,
+    )
+
+    total_evaluation_time = sum(
+        result.elapsed_seconds
+        for result in results
+    )
+
     return {
         "total_benchmarks": total,
         "reproducible_failures": reproducible,
         "successful_repairs": successful,
         "regression_free_repairs": regression_free,
+
         "repair_success_rate": (
             successful / reproducible
             if reproducible
             else 0.0
         ),
+
         "regression_free_rate": (
             regression_free / successful
             if successful
             else 0.0
         ),
-        "total_evaluation_time_seconds": round(
-            sum(result.elapsed_seconds for result in results),
+
+        "total_repair_attempts": total_repair_attempts,
+
+        "first_attempt_successes": first_attempt_successes,
+
+        "retry_assisted_successes": retry_assisted_successes,
+
+        "first_attempt_success_rate": (
+            first_attempt_successes / reproducible
+            if reproducible
+            else 0.0
+        ),
+
+        "retry_assisted_rate": (
+            retry_assisted_successes / reproducible
+            if reproducible
+            else 0.0
+        ),
+
+        "average_repair_attempts": round(
+            average_repair_attempts,
             2,
         ),
+
+        "maximum_repair_attempts": maximum_repair_attempts,
+
+        "total_evaluation_time_seconds": round(
+            total_evaluation_time,
+            2,
+        ),
+
         "average_evaluation_time_seconds": round(
-            (
-                sum(result.elapsed_seconds for result in results)
-                / total
-            )
+            total_evaluation_time / total
             if total
             else 0.0,
             2,
         ),
     }
+
 
 
 def write_json(
@@ -487,6 +578,40 @@ def write_markdown(
             "- Regression-free rate: "
             f"**{metrics['regression_free_rate'] * 100:.1f}%**"
         ),
+        "",
+        "## Repair Attempt Analysis",
+        "",
+        (
+            "- Total repair attempts: "
+            f"**{metrics['total_repair_attempts']}**"
+        ),
+        (
+            "- First-attempt successes: "
+            f"**{metrics['first_attempt_successes']}**"
+        ),
+        (
+            "- Retry-assisted successes: "
+            f"**{metrics['retry_assisted_successes']}**"
+        ),
+        (
+            "- First-attempt success rate: "
+            f"**{metrics['first_attempt_success_rate'] * 100:.1f}%**"
+        ),
+        (
+            "- Retry-assisted rate: "
+            f"**{metrics['retry_assisted_rate'] * 100:.1f}%**"
+        ),
+        (
+            "- Average repair attempts: "
+            f"**{metrics['average_repair_attempts']:.2f}**"
+        ),
+        (
+            "- Maximum repair attempts: "
+            f"**{metrics['maximum_repair_attempts']}**"
+        ),
+        "",
+        "## Evaluation Time",
+        "",
         (
             "- Total evaluation time: "
             f"**{metrics['total_evaluation_time_seconds']}s**"
@@ -498,8 +623,8 @@ def write_markdown(
         "",
         "## Benchmark Results",
         "",
-        "| Benchmark | Baseline | Repair | Regression | Time |",
-        "|---|---|---|---|---:|",
+        "| Benchmark | Baseline | Repair | Regression | Attempts | Time |",
+        "|---|---|---|---|---:|---:|",
     ]
 
     for result in results:
@@ -524,6 +649,7 @@ def write_markdown(
         lines.append(
             f"| {result.name} | {baseline} | "
             f"{repair} | {regression} | "
+            f"{result.repair_attempts} | "
             f"{result.elapsed_seconds:.1f}s |"
         )
 
@@ -545,6 +671,15 @@ def write_markdown(
             "A regression-free repair is one that is accepted without "
             "introducing new regression failures.",
             "",
+            "Repair attempts measure the number of generated repair "
+            "attempts required for a benchmark repair.",
+            "",
+            "First-attempt successes are repairs accepted after the "
+            "initial generated repair.",
+            "",
+            "Retry-assisted successes are repairs that required at "
+            "least one additional repair attempt.",
+            "",
         ]
     )
 
@@ -552,6 +687,7 @@ def write_markdown(
         "\n".join(lines),
         encoding="utf-8",
     )
+
 
 
 def main() -> None:
@@ -591,6 +727,9 @@ def main() -> None:
                 repair_contexts=0,
                 applied_repairs=0,
                 decisions=0,
+                repair_attempts=0,
+                first_attempt_successes=0,
+                retry_assisted_successes=0,
                 repair_accepted=False,
                 regression_free=False,
                 elapsed_seconds=0.0,

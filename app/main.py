@@ -136,6 +136,90 @@ def main():
         len(result.get("decisions", []))
     )
 
+    # --------------------------------------------------
+    # Repair attempt metrics
+    # --------------------------------------------------
+
+    processed_repairs = result.get(
+        "processed_repairs",
+        []
+    )
+
+    repair_attempts = [
+        repair.get("attempts", 0)
+        for repair in processed_repairs
+        if repair.get("attempts") is not None
+    ]
+
+    total_attempts = sum(repair_attempts)
+
+    first_attempt_successes = sum(
+        1
+        for attempts in repair_attempts
+        if attempts == 1
+    )
+
+    retry_assisted_successes = sum(
+        1
+        for attempts in repair_attempts
+        if attempts > 1
+    )
+
+    print(
+        "\n---------------- REPAIR METRICS ----------------\n"
+    )
+
+    print(
+        "Repair Attempts:",
+        total_attempts
+    )
+
+    print(
+        "First-Attempt Successes:",
+        first_attempt_successes
+    )
+
+    print(
+        "Retry-Assisted Successes:",
+        retry_assisted_successes
+    )
+
+    if repair_attempts:
+        first_attempt_rate = (
+            first_attempt_successes
+            / len(repair_attempts)
+        )
+
+        retry_rate = (
+            retry_assisted_successes
+            / len(repair_attempts)
+        )
+
+        average_attempts = (
+            total_attempts
+            / len(repair_attempts)
+        )
+
+        print(
+            "First-Attempt Success Rate:",
+            f"{first_attempt_rate:.1%}"
+        )
+
+        print(
+            "Retry Rate:",
+            f"{retry_rate:.1%}"
+        )
+
+        print(
+            "Average Repair Attempts:",
+            f"{average_attempts:.2f}"
+        )
+
+        print(
+            "Maximum Repair Attempts:",
+            max(repair_attempts)
+        )
+
     print(
         "\n================================================\n"
     )

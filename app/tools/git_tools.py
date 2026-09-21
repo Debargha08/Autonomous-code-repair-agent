@@ -1,15 +1,36 @@
+from pathlib import Path
 import os
 import subprocess
 
 
 def _run_git(repository_path, *args):
     """
-    Run a Git command inside the supplied path.
-    Git automatically resolves the actual repository root.
+    Run a Git command from the actual repository root.
+
+    This ensures repository-root-relative paths passed to Git
+    are interpreted consistently even when repository_path is
+    a nested directory.
     """
+    repository_path = Path(repository_path).resolve()
+
+    root_result = subprocess.run(
+        [
+            "git",
+            "-C",
+            str(repository_path),
+            "rev-parse",
+            "--show-toplevel",
+        ],
+        capture_output=True,
+        text=True,
+        check=True,
+    )
+
+    repository_root = root_result.stdout.strip()
+
     return subprocess.run(
         ["git", *args],
-        cwd=repository_path,
+        cwd=repository_root,
         capture_output=True,
         text=True,
         check=True,
@@ -306,18 +327,99 @@ def rollback_to_commit(
     )
 
 
-def get_changed_files(repository_path):
+def get_changed_files(repository_path, target_files=None):
     """
     Return files changed relative to HEAD.
+
+    target_files are paths relative to the Git repository root
+    or absolute paths.
     """
-    result = _run_git(
-        repository_path,
-        "diff",
-        "--name-only",
-    )
+    args = ["diff", "--name-only"]
+
+    if target_files:
+        repository_root = Path(
+            get_repository_root(repository_path)
+        ).resolve()
+
+        normalized_targets = []
+
+        for target_file in target_files:
+            target_path = Path(target_file)
+
+            if target_path.is_absolute():
+                target_path = target_path.resolve()
+            else:
+                target_path = (
+                    repository_root / target_path
+                ).resolve()
+
+            try:
+                relative_path = target_path.relative_to(
+                    repository_root
+                )
+            except ValueError as exc:
+                raise ValueError(
+                    f"Target file is outside the repository: "
+                    f"{target_file}"
+                ) from exc
+
+            normalized_targets.append(str(relative_path))
+
+        args.extend(["--", *normalized_targets])
+
+    result = _run_git(repository_path, *args)
 
     return [
         line.strip()
         for line in result.stdout.splitlines()
         if line.strip()
     ]
+
+
+def get_diff(repository_path, target_files=None):
+    """
+    Return the current working-tree diff relative to HEAD.
+
+    target_files are paths relative to the Git repository root
+    or absolute paths.
+    """
+    args = [
+        "diff",
+        "--no-ext-diff",
+        "--unified=3",
+    ]
+
+    if target_files:
+        repository_root = Path(
+            get_repository_root(repository_path)
+        ).resolve()
+
+        normalized_targets = []
+
+        for target_file in target_files:
+            target_path = Path(target_file)
+
+            if target_path.is_absolute():
+                target_path = target_path.resolve()
+            else:
+                target_path = (
+                    repository_root / target_path
+                ).resolve()
+
+            try:
+                relative_path = target_path.relative_to(
+                    repository_root
+                )
+            except ValueError as exc:
+                raise ValueError(
+                    f"Target file is outside the repository: "
+                    f"{target_file}"
+                ) from exc
+
+            normalized_targets.append(str(relative_path))
+
+        args.extend(["--", *normalized_targets])
+
+    result = _run_git(repository_path, *args)
+
+    return result.stdout
