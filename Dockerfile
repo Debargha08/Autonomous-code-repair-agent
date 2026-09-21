@@ -15,7 +15,6 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY app ./app
 COPY sandbox ./sandbox
-COPY tests ./tests
 COPY README.md .
 
 EXPOSE 8000
