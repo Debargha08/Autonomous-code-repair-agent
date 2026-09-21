@@ -278,13 +278,79 @@ The repository contains multiple repair benchmarks:
 ```text
 sandbox/repair_bench/
 ├── arithmetic/
+├── boolean_logic/
 ├── boundary/
+├── dictionary_lookup/
+├── list_filter/
+├── multiple_branches/
 ├── nested_statement/
+├── off_by_one/
 ├── retry_test/
 └── string_transform/
 ```
 
 These benchmarks exercise different repair scenarios including arithmetic behavior, boundary conditions, nested statements, retry behavior, and string transformations.
+
+### Evaluation Results
+
+The repair agent was evaluated across 10 intentionally faulty software
+benchmarks.
+
+| Metric | Result |
+|---|---:|
+| Benchmarks evaluated | 10 |
+| Reproducible failing benchmarks | 10 |
+| Successful repairs | **9** |
+| Regression-free repairs | **9** |
+| Repair success rate | **90.0%** |
+| Regression-free rate | **100.0%** |
+| Total repair attempts | 10 |
+| First-attempt successes | 8 |
+| Retry-assisted successes | 1 |
+| Maximum repair attempts | 2 |
+
+### Benchmark Results
+
+| Benchmark | Baseline | Repair | Regression | Attempts |
+|---|---|---|---|---:|
+| arithmetic | FAIL | PASS | PASS | 1 |
+| boolean_logic | FAIL | ERROR | ERROR | 0 |
+| boundary | FAIL | PASS | PASS | 1 |
+| dictionary_lookup | FAIL | PASS | PASS | 1 |
+| list_filter | FAIL | PASS | PASS | 1 |
+| multiple_branches | FAIL | PASS | PASS | 2 |
+| nested_statement | FAIL | PASS | PASS | 1 |
+| off_by_one | FAIL | PASS | PASS | 1 |
+| retry_test | FAIL | PASS | PASS | 1 |
+| string_transform | FAIL | PASS | PASS | 1 |
+
+### Repair Attempt Analysis
+
+Of the 9 successful repairs:
+
+- 8 were accepted on the first generated repair.
+- 1 required a second repair attempt.
+- `multiple_branches` succeeded after 2 repair attempts.
+- The maximum number of attempts for a successful repair was 2.
+
+One benchmark, `boolean_logic`, encountered an evaluation error before
+repair execution and is reported separately rather than being counted
+as a repair success or failure.
+
+### Evaluation Methodology
+
+Each benchmark contains a seeded software defect.
+
+The evaluator first verifies that the defect reproduces through the
+benchmark test suite.
+
+The autonomous repair pipeline is then executed against the benchmark.
+
+A repair is considered successful when the pipeline accepts the generated
+repair after validation.
+
+A regression-free repair is one that is accepted without introducing new
+regression failures.
 
 ### Example: Retry Benchmark
 
